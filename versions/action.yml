@@ -1,0 +1,55 @@
+name: Get Allincart Tags in Range
+description: Get the first and latest tag in a version range (e.g., v6.7. to v6.8.)
+
+inputs:
+  first-version:
+    description: First version prefix (inclusive), e.g., v6.7.
+    required: false
+    default: v6.7.
+  latest-version:
+    description: Latest version prefix (exclusive), e.g., v6.8.
+    required: false
+    default: v6.8.
+
+outputs:
+  first-version:
+    description: The first version in the range
+    value: ${{ steps.get.outputs.FIRST_TAG }}
+  latest-version:
+    description: The last version in the range
+    value: ${{ steps.get.outputs.LATEST_TAG }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Get first and latest version
+      id: get-versions
+      uses: actions/github-script@v6.4.1
+      with:
+        script: |
+          const from = "${{ inputs.first-version }}".startsWith("v") ? "${{ inputs.first-version }}" : "v${{ inputs.first-version }}";
+          const to = "${{ inputs.latest-version }}".startsWith("v") ? "${{ inputs.latest-version }}" : "v${{ inputs.latest-version }}";
+
+          const tags = await github.paginate(
+            github.rest.repos.listTags,
+            {
+              owner: "allincart-org",
+              repo: "allincart",
+              per_page: 100
+            }
+          );
+
+          const filtered = tags
+            .map(tag => tag.name)
+            .filter(name => name.startsWith("v"))
+            .filter(name => !/rc|alpha|beta/i.test(name))
+            .filter(name => name.localeCompare(from, undefined, { numeric: true }) >= 0)
+            .filter(name => name.localeCompare(to, undefined, { numeric: true }) < 0)
+            .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+          if (filtered.length === 0) {
+            throw new Error(`No tags found between ${from} and ${to}`);
+          }
+
+          core.setOutput("FIRST_TAG", filtered[0]);
+          core.setOutput("LATEST_TAG", filtered[filtered.length - 1]);
