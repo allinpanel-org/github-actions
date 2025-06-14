@@ -1,0 +1,59 @@
+name: allinpanel-version
+description: "Get the AllinPanel version matching the current branch. Falls back if no match is found."
+branding:
+  color: "purple"
+  icon: "check-circle"
+
+inputs:
+  fallback:
+    description: The fallback that is returned if there's no matching branch
+    default: trunk
+    required: false
+  repo:
+    description: The repo where to look for matching refs
+    default: allinpanel-org/allinpanel
+    required: false
+  allinpanel-github-token:
+    description: Token used for checking out the allinpanel repository
+    required: false
+    default: ""
+
+outputs:
+  allinpanel-version:
+    description: The matching allinpanel version or fallback
+    value: ${{ steps.get-version.outputs.allinpanel-version }}
+
+runs:
+  using: "composite"
+  steps:
+    - id: get-version
+      uses: actions/github-script@v7
+      env:
+        FALLBACK: ${{ inputs.fallback }}
+        TARGET_REPO: ${{ inputs.repo }}
+        CURRENT_REF: ${{ github.ref_name }}
+      with:
+        github-token: ${{ inputs.allinpanel-github-token || github.token }}
+        script: |
+          const fallback = process.env.FALLBACK || 'trunk';
+          const targetRepo = process.env.TARGET_REPO || 'allinpanel-org/allinpanel';
+          const currentRef = process.env.CURRENT_REF;
+
+          const [owner, repo] = targetRepo.split('/');
+          try {
+            // Try to get the matching branch
+            const { data: branch } = await github.rest.repos.getBranch({
+              owner,
+              repo,
+              branch: currentRef,
+            });
+
+            if (branch && branch.name) {
+              core.setOutput('allinpanel-version', branch.name);
+              return;
+            }
+          } catch (err) {
+            core.info(`Branch "${currentRef}" not found in ${targetRepo}, using fallback "${fallback}"`);
+          }
+
+          core.setOutput('allinpanel-version', fallback);

@@ -1,0 +1,89 @@
+name: ESLint
+description: "Run eslint for AllinPanel administration projects"
+branding:
+  color: "purple"
+  icon: "check-circle"
+
+inputs:
+  extensionName:
+    description: "Your extension name"
+    required: true
+  projectPath:
+    description: "Path to the js project to be linted. Checks the administartion app by default"
+    default: src/Resources/app/administration
+  npmLintCmd:
+    description: "The npm command to run"
+    default: lint
+  allinpanelVersion:
+    description: |
+      With the default `.auto`, the workflow tries to find a allinpanel version using the allinpanel-version action.
+
+      For example, if the current ref is next-1234, it will try to find the ref next-1234 in allinpanel/allinpanel. If there's no matching ref, it will use allinpanelVersionFallback
+    required: false
+    default: ".auto"
+  allinpanelVersionFallback:
+    description: Fallback version in case there's no matching branch
+    required: false
+    default: trunk
+  allinpanel-repository:
+    description: The allinpanel repository to checkout
+    required: true
+    default: allinpanel/allinpanel
+  allinpanel-github-token:
+    description: Token used for checking out the allinpanel repository
+    required: true
+    default: ${{ github.token }}
+  forceInstallAdminDeps:
+    description: Install platform admin deps
+    default: ""
+    required: false
+  forceInstallStorefrontDeps:
+    description: Install platform storefront deps
+    default: ""
+    required: false
+
+runs:
+  using: "composite"
+  steps:
+    - uses: allinpanel/github-actions/allinpanel-version@main
+      with:
+        fallback: ${{ inputs.allinpanelVersionFallback }}
+        repo: ${{ inputs.allinpanel-repository }}
+        allinpanel-github-token: ${{ inputs.allinpanel-github-token }}
+      id: version
+      if: ${{ inputs.allinpanelVersion == '.auto' || inputs.allinpanelVersion == '' }}
+    - name: Clone AllinPanel
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.allinpanel-repository || 'allinpanel-org/allinpanel' }}
+        ref: ${{ steps.version.outputs.allinpanel-version || inputs.allinpanelVersion }}
+        token: ${{ inputs.allinpanel-github-token }}
+
+    - name: Clone Extension
+      uses: actions/checkout@v4
+      with:
+        path: custom/plugins/${{ inputs.extensionName }}
+
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20.x"
+
+    - name: Install admin deps
+      shell: bash
+      if: ${{ inputs.forceInstallAdminDeps || contains(inputs.projectPath, 'administration') }}
+      run: npm ci --no-audit --no-fund --prefer-offline --prefix "src/Administration/Resources/app/administration"
+
+    - name: Install storefront deps
+      shell: bash
+      if: ${{ inputs.forceInstallStorefrontDeps || contains(inputs.projectPath, 'storefront') }}
+      run: npm ci --no-audit --no-fund --prefer-offline  --prefix "src/Storefront/Resources/app/storefront"
+
+    - name: Install Plugin Dependencies
+      shell: bash
+      run: npm install --no-audit --no-fund --prefer-offline --prefix "custom/plugins/${{ inputs.extensionName }}/${{ inputs.projectPath }}"
+
+    - name: Run Lint command
+      shell: bash
+      working-directory: custom/plugins/${{ inputs.extensionName }}/${{ inputs.projectPath }}
+      run: npm run ${{ inputs.npmLintCmd }}
